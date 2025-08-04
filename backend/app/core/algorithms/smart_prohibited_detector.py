@@ -6,7 +6,7 @@ import jieba
 from typing import List, Dict, Any, Tuple, Set
 from sqlalchemy.orm import Session
 
-from app.models.database import ProhibitedWord
+from app.models.database import ProhibitedWord, WhitelistPattern
 
 
 class SmartProhibitedDetector:
@@ -15,7 +15,7 @@ class SmartProhibitedDetector:
     def __init__(self, db: Session):
         self.db = db
         self.prohibited_words = self._load_prohibited_words()
-        self.whitelist_patterns = self._build_whitelist_patterns()
+        self.whitelist_patterns = self._load_whitelist_patterns()
         self.context_rules = self._build_context_rules()
     
     def _load_prohibited_words(self) -> List[Dict]:
@@ -30,97 +30,27 @@ class SmartProhibitedDetector:
             for word in words
         ]
     
-    def _build_whitelist_patterns(self) -> Dict[str, List[str]]:
-        """构建白名单模式 - 包含违禁词但语义正常的表达"""
-        return {
-            "第一": [
-                r"第一次",
-                r"第一步",
-                r"第一天",
-                r"第一个",
-                r"第一名",
-                r"第一季",
-                r"第一期",
-                r"第一章",
-                r"第一级",
-                r"第一层",
-                r"第一道",
-                r"第一款",
-                r"第一批",
-                r"第一部",
-                r"第一集",
-                r"第一阶段",
-                r"第一印象",
-                r"第一感觉",
-                r"第一眼",
-                r"第一反应",
-                r"第一时间",
-                r"第一年",
-                r"第一月",
-                r"第一周",
-                r"排名第一",
-                r"世界第一",
-                r"全国第一",
-                r"行业第一"
-            ],
-            "最": [
-                r"最近",
-                r"最新",
-                r"最后",
-                r"最初",
-                r"最终",
-                r"最基本",
-                r"最常见",
-                r"最重要",
-                r"最简单",
-                r"最复杂",
-                r"最大限度",
-                r"最小化",
-                r"最优化",
-                r"最适合",
-                r"最合适",
-                r"最理想",
-                r"最完美",
-                r"最精准",
-                r"最准确",
-                r"最有效",
-                r"最安全",
-                r"最健康",
-                r"最天然",
-                r"最纯净"
-            ],
-            "包治": [
-                r"包装治疗",
-                r"包含治疗",
-                r"不包治",
-                r"非包治"
-            ],
-            "减肥": [
-                r"减肥餐",
-                r"减肥食谱",
-                r"减肥运动",
-                r"减肥方法",
-                r"健康减肥",
-                r"科学减肥",
-                r"减肥心得",
-                r"减肥经验",
-                r"减肥日记",
-                r"减肥过程",
-                r"减肥成功",
-                r"减肥失败",
-                r"想要减肥",
-                r"准备减肥",
-                r"开始减肥",
-                r"正在减肥"
-            ],
-            "微商": [
-                r"不是微商",
-                r"拒绝微商",
-                r"远离微商",
-                r"讨厌微商",
-                r"反对微商"
-            ]
-        }
+    def _load_whitelist_patterns(self) -> Dict[str, List[str]]:
+        """从数据库加载白名单模式"""
+        try:
+            # 查询启用的白名单模式
+            patterns = self.db.query(WhitelistPattern).filter(
+                WhitelistPattern.is_active == 1
+            ).order_by(WhitelistPattern.priority.desc()).all()
+            
+            # 按违禁词分组
+            whitelist_dict = {}
+            for pattern in patterns:
+                word = pattern.prohibited_word
+                if word not in whitelist_dict:
+                    whitelist_dict[word] = []
+                whitelist_dict[word].append(pattern.pattern)
+            
+            return whitelist_dict
+        except Exception as e:
+            # 如果数据库查询失败，返回空字典并记录错误
+            print(f"加载白名单模式失败: {e}")
+            return {}
     
     def _build_context_rules(self) -> Dict[str, Dict]:
         """构建上下文规则"""
@@ -190,15 +120,28 @@ class SmartProhibitedDetector:
                 )
                 
                 if risk_assessment["is_violation"]:
+                    # 生成唯一ID
+                    import uuid
+                    issue_id = str(uuid.uuid4())
+                    
+                    # 确定严重程度
+                    severity_mapping = {1: "low", 2: "medium", 3: "high"}
+                    severity = severity_mapping.get(risk_assessment["adjusted_risk_level"], "medium")
+                    
                     issues.append({
+                        "id": issue_id,
                         "type": "prohibited_word",
                         "word": prohibited_word,
-                        "position": start_pos,
+                        "start_pos": start_pos,
+                        "end_pos": end_pos,
+                        "position": start_pos,  # 保持向后兼容
                         "risk_level": risk_assessment["adjusted_risk_level"],
                         "category": word_info["category"],
-                        "context": context["full_context"],
+                        "reason": risk_assessment["analysis"],
+                        "context": context["sentence_context"],
                         "analysis": risk_assessment["analysis"],
                         "confidence": risk_assessment["confidence"],
+                        "severity": severity,
                         "suggestions": self._get_contextual_suggestions(prohibited_word, context)
                     })
         
@@ -297,11 +240,12 @@ class SmartProhibitedDetector:
     def _get_risk_indicators(self, word: str, sentence: str, local_context: str) -> Dict:
         """获取风险指示器"""
         risk_patterns = {
-            "营销推广": [r"推荐", r"安利", r"种草", r"必买", r"限时", r"特价", r"优惠"],
-            "绝对化表达": [r"绝对", r"100%", r"百分百", r"完全", r"彻底"],
+            "营销推广": [r"推荐", r"安利", r"种草", r"必买", r"限时", r"特价", r"优惠", r"我家的", r"我们的产品", r"这款产品"],
+            "绝对化表达": [r"绝对", r"100%", r"百分百", r"完全", r"彻底", r"世界第一", r"全球第一", r"行业第一", r"没人敢说"],
             "医疗承诺": [r"治疗", r"治愈", r"康复", r"根治", r"药效", r"疗效"],
             "夸大宣传": [r"神奇", r"奇迹", r"秘密", r"独家", r"专利", r"权威"],
-            "紧迫感营销": [r"马上", r"立即", r"赶紧", r"抓紧", r"仅限", r"名额有限"]
+            "紧迫感营销": [r"马上", r"立即", r"赶紧", r"抓紧", r"仅限", r"名额有限"],
+            "产品宣传": [r"产品是", r"品牌是", r"效果是", r"质量是"]
         }
         
         indicators = []

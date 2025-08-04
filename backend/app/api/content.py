@@ -23,11 +23,18 @@ class ContentRequest(BaseModel):
 
 
 class DetectedIssue(BaseModel):
+    id: str  # 唯一标识符
     type: str
     word: str
-    position: int
+    start_pos: int
+    end_pos: int
     risk_level: int
+    category: str
+    reason: str
     suggestions: List[str]
+    context: str
+    confidence: float
+    severity: str  # "high", "medium", "low"
 
 
 class OptimizationSuggestion(BaseModel):
@@ -99,11 +106,18 @@ async def analyze_content(
         return ContentAnalysisResponse(
             detected_issues=[
                 DetectedIssue(
+                    id=issue.get("id", str(uuid.uuid4())),
                     type=issue["type"],
                     word=issue["word"],
-                    position=issue["position"],
+                    start_pos=issue.get("position", issue.get("start_pos", 0)),
+                    end_pos=issue.get("end_pos", issue.get("position", 0) + len(issue["word"])),
                     risk_level=issue["risk_level"],
-                    suggestions=issue["suggestions"]
+                    category=issue.get("category", "unknown"),
+                    reason=issue.get("analysis", issue.get("reason", "检测到违规内容")),
+                    suggestions=issue["suggestions"],
+                    context=issue.get("context", ""),
+                    confidence=issue.get("confidence", 0.8),
+                    severity=issue.get("severity", "medium")
                 ) for issue in analysis_result["issues"]
             ],
             content_score=analysis_result["score"],

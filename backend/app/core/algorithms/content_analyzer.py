@@ -35,6 +35,10 @@ class ContentAnalyzer:
         # 使用智能违禁词检测器
         detected_issues = self.smart_detector.detect_prohibited_words(content)
         
+        # 检测谐音词替换机会
+        homophone_opportunities = self._detect_homophone_opportunities(content)
+        detected_issues.extend(homophone_opportunities)
+        
         # 计算内容质量评分
         content_score = self._calculate_content_score(content, detected_issues)
         
@@ -128,6 +132,71 @@ class ContentAnalyzer:
             suggestions.append(word[0] + "x" + word[1:])
         
         return suggestions[:3]  # 最多返回3个建议
+    
+    def _detect_homophone_opportunities(self, content: str) -> List[Dict]:
+        """检测谐音词替换机会"""
+        issues = []
+        
+        # 从数据库获取所有可替换的原始词汇
+        from app.models.database import OriginalWord, HomophoneReplacement
+        
+        original_words = self.db.query(OriginalWord).filter(
+            OriginalWord.status == 1
+        ).all()
+        
+        for original_word in original_words:
+            word = original_word.word
+            
+            # 查找该词在内容中的所有位置
+            for match in re.finditer(re.escape(word), content, re.IGNORECASE):
+                start_pos = match.start()
+                end_pos = match.end()
+                
+                # 获取该词的谐音替换选项
+                replacements = self.db.query(HomophoneReplacement).filter(
+                    HomophoneReplacement.original_word_id == original_word.id,
+                    HomophoneReplacement.status == 1
+                ).order_by(
+                    HomophoneReplacement.priority.desc(),
+                    HomophoneReplacement.confidence_score.desc()
+                ).limit(5).all()
+                
+                if replacements:
+                    # 生成唯一ID
+                    import uuid
+                    issue_id = str(uuid.uuid4())
+                    
+                    # 提取上下文
+                    context_start = max(0, start_pos - 20)
+                    context_end = min(len(content), end_pos + 20)
+                    context = content[context_start:context_end]
+                    
+                    issues.append({
+                        "id": issue_id,
+                        "type": "homophone_word",
+                        "word": word,
+                        "start_pos": start_pos,
+                        "end_pos": end_pos,
+                        "position": start_pos,  # 保持向后兼容
+                        "risk_level": 1,  # 谐音词风险级别较低
+                        "category": "homophone",
+                        "reason": "可使用谐音词替换以提升内容安全性",
+                        "context": context,
+                        "confidence": 0.9,
+                        "severity": "low",
+                        "suggestions": [r.replacement_word for r in replacements],
+                        "replacement_options": [
+                            {
+                                "replacement": r.replacement_word,
+                                "type": r.replacement_type,
+                                "confidence": r.confidence_score,
+                                "priority": r.priority
+                            }
+                            for r in replacements
+                        ]
+                    })
+        
+        return issues
     
     def _calculate_content_score(self, content: str, issues: List[Dict]) -> int:
         """计算内容质量评分（0-100分）"""

@@ -108,7 +108,7 @@ const handleLogin = async () => {
       // 添加延迟确保状态更新完成
       setTimeout(() => {
         console.log('开始跳转到dashboard')
-        router.push('/admin/dashboard')
+        router.push('/management/dashboard')
       }, 100)
     } catch (error: any) {
       console.error('登录处理错误:', error)
@@ -120,7 +120,7 @@ const handleLogin = async () => {
 // 检查是否已登录
 onMounted(() => {
   if (authStore.isAuthenticated) {
-    router.push('/admin/dashboard')
+    router.push('/management/dashboard')
   }
 })
 </script>

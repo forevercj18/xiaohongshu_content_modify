@@ -184,3 +184,20 @@ class EmojiUsageLog(Base):
     emoji = relationship("XiaohongshuEmoji")
     # 关联内容
     content = relationship("UserContentHistory")
+
+
+class WhitelistPattern(Base):
+    """白名单模式表"""
+    __tablename__ = "whitelist_patterns"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    prohibited_word = Column(String(100), nullable=False, comment="对应的违禁词")
+    pattern = Column(String(500), nullable=False, comment="白名单正则模式")
+    description = Column(String(200), comment="模式描述")
+    category = Column(String(50), comment="模式分类")
+    example = Column(String(200), comment="示例文本")
+    is_active = Column(Integer, default=1, comment="是否启用")
+    priority = Column(Integer, default=1, comment="优先级")
+    created_by = Column(String(50), comment="创建者")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

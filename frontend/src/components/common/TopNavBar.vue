@@ -24,9 +24,6 @@
       >
         <component :is="themeStore.currentTheme === 'light' ? Moon : Sun" :size="18" />
       </el-button>
-      <router-link to="/admin" class="nav-btn">
-        管理后台
-      </router-link>
     </div>
   </header>
 </template>

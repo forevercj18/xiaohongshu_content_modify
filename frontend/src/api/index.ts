@@ -34,8 +34,8 @@ api.interceptors.response.use(
         case 401:
           ElMessage.error('登录已过期，请重新登录')
           localStorage.removeItem('admin_token')
-          if (window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin/login') {
-            window.location.href = '/admin/login'
+          if (window.location.pathname.startsWith('/management') && window.location.pathname !== '/management/login') {
+            window.location.href = '/management/login'
           }
           break
         case 403:

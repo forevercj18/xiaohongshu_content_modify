@@ -13,6 +13,7 @@ from app.api.admin import router as admin_router
 from app.api.stats import router as stats_router
 from app.api.emoji import router as emoji_router
 from app.api.emoji_recommendation import router as emoji_recommendation_router
+from app.api.whitelist import router as whitelist_router
 
 
 @asynccontextmanager
@@ -48,6 +49,7 @@ app.include_router(admin_router, prefix="/api/admin", tags=["管理员"])
 app.include_router(stats_router, prefix="/api/stats", tags=["统计"])
 app.include_router(emoji_router, tags=["表情管理"])
 app.include_router(emoji_recommendation_router, tags=["智能表情推荐"])
+app.include_router(whitelist_router, prefix="/api", tags=["白名单管理"])
 
 
 @app.get("/")

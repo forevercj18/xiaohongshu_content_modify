@@ -536,11 +536,12 @@ const fetchEmojis = async () => {
   try {
     const response = await emojiAdminApi.getEmojiList({
       page: 1,
-      size: 1000 // 获取所有数据，前端分页
+      size: 100 // API最大支持100条
     })
     emojis.value = response.emojis
   } catch (error) {
     console.error('获取表情列表失败:', error)
+    emojis.value = [] // 确保错误时清空数据
   } finally {
     loading.value = false
   }

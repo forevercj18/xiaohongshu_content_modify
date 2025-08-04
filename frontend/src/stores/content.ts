@@ -3,11 +3,25 @@ import { analyzeContent, optimizeContent, getContentHistory } from '@/api/conten
 import { emojiApi, type EmojiSuggestion, type EmojiRecommendation } from '@/api/emoji'
 
 interface DetectedIssue {
+  id: string
   type: string
   word: string
-  position: number
+  start_pos: number
+  end_pos: number
+  position?: number // 保持向后兼容
   risk_level: number
+  category: string
+  reason: string
   suggestions: string[]
+  context: string
+  confidence: number
+  severity: string
+  replacement_options?: {
+    replacement: string
+    type: string
+    confidence: number
+    priority: number
+  }[]
 }
 
 interface OptimizationSuggestion {
@@ -42,7 +56,13 @@ export const useContentStore = defineStore('content', {
     // 表情推荐相关状态
     emojiSuggestions: [] as EmojiSuggestion[],
     emojiRecommendations: [] as EmojiRecommendation[],
-    isLoadingEmojiSuggestions: false
+    isLoadingEmojiSuggestions: false,
+    // 高亮交互相关状态
+    selectedIssue: null as DetectedIssue | null,
+    resolvedIssues: new Set<string>(),
+    showReplacementPanel: false,
+    showTooltip: false,
+    tooltipPosition: { x: 0, y: 0 }
   }),
   
   actions: {
@@ -165,6 +185,96 @@ export const useContentStore = defineStore('content', {
       if (this.optimizedContent) {
         navigator.clipboard.writeText(this.optimizedContent)
       }
+    },
+    
+    // 高亮交互相关方法
+    selectIssue(issue: DetectedIssue) {
+      this.selectedIssue = issue
+    },
+    
+    clearSelectedIssue() {
+      this.selectedIssue = null
+      this.showTooltip = false
+    },
+    
+    showIssueTooltip(issue: DetectedIssue, position: { x: number; y: number }) {
+      this.selectedIssue = issue
+      this.tooltipPosition = position
+      this.showTooltip = true
+    },
+    
+    hideTooltip() {
+      this.showTooltip = false
+    },
+    
+    replaceWord(issue: DetectedIssue, replacement: string) {
+      const startPos = issue.start_pos
+      const endPos = issue.end_pos
+      
+      // 替换文本内容
+      const newContent = 
+        this.currentContent.substring(0, startPos) + 
+        replacement + 
+        this.currentContent.substring(endPos)
+      
+      this.currentContent = newContent
+      
+      // 标记问题为已解决
+      this.resolvedIssues.add(issue.id)
+      
+      // 更新其他问题的位置（如果有必要）
+      this.updateIssuePositions(startPos, endPos - startPos, replacement.length)
+      
+      // 清除选中状态
+      this.clearSelectedIssue()
+    },
+    
+    updateIssuePositions(changeStartPos: number, originalLength: number, newLength: number) {
+      const lengthDiff = newLength - originalLength
+      
+      // 更新后续问题的位置
+      this.detectedIssues.forEach(issue => {
+        if (issue.start_pos > changeStartPos) {
+          issue.start_pos += lengthDiff
+          issue.end_pos += lengthDiff
+        }
+      })
+    },
+    
+    ignoreIssue(issueId: string) {
+      this.resolvedIssues.add(issueId)
+      if (this.selectedIssue?.id === issueId) {
+        this.clearSelectedIssue()
+      }
+    },
+    
+    toggleReplacementPanel() {
+      this.showReplacementPanel = !this.showReplacementPanel
+    },
+    
+    applyAllHomophones() {
+      const homophoneIssues = this.detectedIssues.filter(
+        issue => issue.type === 'homophone_word' && !this.resolvedIssues.has(issue.id)
+      )
+      
+      // 从后往前替换，避免位置偏移问题
+      const sortedIssues = [...homophoneIssues].sort((a, b) => b.start_pos - a.start_pos)
+      
+      for (const issue of sortedIssues) {
+        if (issue.suggestions.length > 0) {
+          this.replaceWord(issue, issue.suggestions[0])
+        } else if (issue.replacement_options && issue.replacement_options.length > 0) {
+          const bestOption = issue.replacement_options.reduce((best, current) => {
+            return current.priority > best.priority ? current : best
+          })
+          this.replaceWord(issue, bestOption.replacement)
+        }
+      }
+    },
+    
+    resetResolvedIssues() {
+      this.resolvedIssues.clear()
+      this.clearSelectedIssue()
     }
   }
 })

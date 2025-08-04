@@ -201,10 +201,10 @@ async def get_prohibited_words(
             word=word.word,
             category=word.category,
             severity=_convert_risk_level_to_severity(word.risk_level),
-            description=getattr(word, 'description', None),
+            description=None,  # 数据库表中没有description字段
             is_active=word.status == 1,
-            created_at=word.created_at.isoformat(),
-            updated_at=word.updated_at.isoformat()
+            created_at=word.created_at.isoformat() if word.created_at else "",
+            updated_at=word.updated_at.isoformat() if word.updated_at else ""
         ) for word in words
     ]
 
@@ -257,7 +257,7 @@ async def create_prohibited_word(
         word=prohibited_word.word,
         category=prohibited_word.category,
         severity=word_data.severity,
-        description=word_data.description,
+        description=None,  # 数据库表中没有description字段
         is_active=word_data.is_active,
         created_at=prohibited_word.created_at.isoformat(),
         updated_at=prohibited_word.updated_at.isoformat()
@@ -310,7 +310,7 @@ async def update_prohibited_word(
         word=prohibited_word.word,
         category=prohibited_word.category,
         severity=_convert_risk_level_to_severity(prohibited_word.risk_level),
-        description=word_data.description,
+        description=None,  # 数据库表中没有description字段
         is_active=prohibited_word.status == 1,
         created_at=prohibited_word.created_at.isoformat(),
         updated_at=prohibited_word.updated_at.isoformat()

@@ -24,66 +24,78 @@
         <div class="nav-section">
           <div v-if="!sidebarCollapsed" class="nav-title">工作空间</div>
           <router-link
-            to="/admin/dashboard"
+            to="/management/dashboard"
             class="nav-item"
-            :class="{ active: $route.name === 'admin-dashboard' }"
+            :class="{ active: $route.name === 'management-dashboard' }"
           >
             <div class="nav-icon">
               <BarChart3 :size="18" />
             </div>
             <span v-if="!sidebarCollapsed" class="nav-label">仪表盘</span>
-            <div v-if="!sidebarCollapsed && $route.name === 'admin-dashboard'" class="nav-indicator"></div>
+            <div v-if="!sidebarCollapsed && $route.name === 'management-dashboard'" class="nav-indicator"></div>
           </router-link>
           
           <router-link
-            to="/admin/prohibited-words"
+            to="/management/prohibited-words"
             class="nav-item"
-            :class="{ active: $route.name === 'admin-prohibited-words' }"
+            :class="{ active: $route.name === 'management-prohibited-words' }"
           >
             <div class="nav-icon">
               <AlertTriangle :size="18" />
             </div>
             <span v-if="!sidebarCollapsed" class="nav-label">违禁词管理</span>
-            <div v-if="!sidebarCollapsed && $route.name === 'admin-prohibited-words'" class="nav-indicator"></div>
+            <div v-if="!sidebarCollapsed && $route.name === 'management-prohibited-words'" class="nav-indicator"></div>
           </router-link>
           
           <router-link
-            to="/admin/homophone-words"
+            to="/management/homophone-words"
             class="nav-item"
-            :class="{ active: $route.name === 'admin-homophone-words' }"
+            :class="{ active: $route.name === 'management-homophone-words' }"
           >
             <div class="nav-icon">
               <Volume2 :size="18" />
             </div>
             <span v-if="!sidebarCollapsed" class="nav-label">谐音词管理</span>
-            <div v-if="!sidebarCollapsed && $route.name === 'admin-homophone-words'" class="nav-indicator"></div>
+            <div v-if="!sidebarCollapsed && $route.name === 'management-homophone-words'" class="nav-indicator"></div>
           </router-link>
           
           <router-link
-            to="/admin/emojis"
+            to="/management/emojis"
             class="nav-item"
-            :class="{ active: $route.name === 'admin-emojis' }"
+            :class="{ active: $route.name === 'management-emojis' }"
           >
             <div class="nav-icon">
               <Smile :size="18" />
             </div>
             <span v-if="!sidebarCollapsed" class="nav-label">表情管理</span>
-            <div v-if="!sidebarCollapsed && $route.name === 'admin-emojis'" class="nav-indicator"></div>
+            <div v-if="!sidebarCollapsed && $route.name === 'management-emojis'" class="nav-indicator"></div>
+          </router-link>
+          
+          <router-link
+            to="/management/whitelist"
+            class="nav-item"
+            :class="{ active: $route.name === 'management-whitelist' }"
+          >
+            <div class="nav-icon">
+              <Shield :size="18" />
+            </div>
+            <span v-if="!sidebarCollapsed" class="nav-label">白名单管理</span>
+            <div v-if="!sidebarCollapsed && $route.name === 'management-whitelist'" class="nav-indicator"></div>
           </router-link>
         </div>
         
         <div class="nav-section" v-if="canManageUsers">
           <div v-if="!sidebarCollapsed" class="nav-title">系统管理</div>
           <router-link
-            to="/admin/users"
+            to="/management/users"
             class="nav-item"
-            :class="{ active: $route.name === 'admin-users' }"
+            :class="{ active: $route.name === 'management-users' }"
           >
             <div class="nav-icon">
               <Users :size="18" />
             </div>
             <span v-if="!sidebarCollapsed" class="nav-label">账号管理</span>
-            <div v-if="!sidebarCollapsed && $route.name === 'admin-users'" class="nav-indicator"></div>
+            <div v-if="!sidebarCollapsed && $route.name === 'management-users'" class="nav-indicator"></div>
           </router-link>
         </div>
         
@@ -161,7 +173,8 @@ import {
   Moon,
   Sun,
   Users,
-  Smile
+  Smile,
+  Shield
 } from 'lucide-vue-next'
 
 import { useAuthStore } from '@/stores/auth'
@@ -213,7 +226,7 @@ const handleLogout = async () => {
     
     authStore.logout()
     ElMessage.success('已退出登录')
-    router.push('/admin/login')
+    router.push('/management/login')
   } catch {
     // 用户取消
   }
@@ -222,7 +235,7 @@ const handleLogout = async () => {
 // 检查认证状态
 onMounted(async () => {
   if (!authStore.isAuthenticated) {
-    router.push('/admin/login')
+    router.push('/management/login')
     return
   }
   
@@ -230,7 +243,7 @@ onMounted(async () => {
     try {
       await authStore.fetchProfile()
     } catch {
-      router.push('/admin/login')
+      router.push('/management/login')
     }
   }
 })

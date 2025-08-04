@@ -12,23 +12,31 @@
           <div class="editor-header">
             <h2 class="section-title">内容编辑器</h2>
             <div class="editor-stats">
-              <span class="char-count">{{ currentContent.length }} / 1000</span>
               <div class="status-indicator" :class="statusClass">
                 <span class="status-dot"></span>
                 <span>{{ statusText }}</span>
+              </div>
+              <div class="editor-actions">
+                <button 
+                  v-if="contentStore.detectedIssues.length > 0"
+                  @click="contentStore.toggleReplacementPanel()"
+                  class="replacement-panel-btn"
+                  :class="{ active: contentStore.showReplacementPanel }"
+                >
+                  批量处理 ({{ unresolvedIssuesCount }})
+                </button>
               </div>
             </div>
           </div>
           
           <div class="editor-container">
-            <el-input
+            <!-- 使用新的高亮编辑器 -->
+            <HighlightEditor
               v-model="currentContent"
-              type="textarea"
-              :rows="12"
-              placeholder="在这里输入您的小红书内容..."
-              class="main-editor"
-              :maxlength="1000"
-              show-word-limit
+              :issues="contentStore.detectedIssues"
+              :max-length="1000"
+              @issue-click="handleIssueClick"
+              @text-change="handleTextChange"
             />
             
             <!-- 工具栏 -->
@@ -64,29 +72,37 @@
               </div>
             </div>
           </div>
+          
+          <!-- 优化结果区域 - 在编辑器区域内 -->
+          <section v-if="contentStore.optimizedContent" class="results-section">
+            <div class="results-header">
+              <h3>优化后内容</h3>
+              <div class="results-actions">
+                <el-button type="default" :icon="Copy" @click="copyContent">
+                  复制
+                </el-button>
+                <el-button type="default" :icon="Download" @click="exportContent">
+                  导出
+                </el-button>
+              </div>
+            </div>
+            <div class="results-content">
+              <div class="optimized-text">
+                {{ contentStore.optimizedContent }}
+              </div>
+            </div>
+          </section>
         </section>
 
         <!-- 右侧面板 -->
         <aside class="detection-sidebar">
           <div class="sidebar-header">
-            <el-tabs v-model="activeSidebarTab" class="sidebar-tabs">
-              <el-tab-pane label="检测结果" name="detection">
-                <template #label>
-                  <span class="tab-label">
-                    <Search :size="16" />
-                    检测结果
-                  </span>
-                </template>
-              </el-tab-pane>
-              <el-tab-pane label="管理面板" name="management">
-                <template #label>
-                  <span class="tab-label">
-                    <Settings :size="16" />
-                    管理面板
-                  </span>
-                </template>
-              </el-tab-pane>
-            </el-tabs>
+            <div class="sidebar-title">
+              <span class="tab-label">
+                <Search :size="16" />
+                检测结果
+              </span>
+            </div>
             <el-button 
               v-if="themeStore.currentTheme === 'light'" 
               type="text" 
@@ -101,8 +117,8 @@
             />
           </div>
           
-          <!-- 检测结果标签页内容 -->
-          <div v-if="activeSidebarTab === 'detection'" class="detection-cards">
+          <!-- 检测结果内容 -->
+          <div class="detection-cards">
             <!-- 违禁词检测卡片 -->
             <DetectionCard
               title="违禁词检测"
@@ -133,34 +149,32 @@
               :suggestions="contentStore.emojiSuggestions"
             />
           </div>
-
-          <!-- 管理面板标签页内容 -->
-          <div v-if="activeSidebarTab === 'management'" class="management-panel">
-            <EmojiManagementPanel />
-          </div>
         </aside>
       </div>
-
-      <!-- 底部结果区域 -->
-      <section v-if="contentStore.optimizedContent" class="results-section">
-        <div class="results-header">
-          <h3>优化后内容</h3>
-          <div class="results-actions">
-            <el-button type="default" :icon="Copy" @click="copyContent">
-              复制
-            </el-button>
-            <el-button type="default" :icon="Download" @click="exportContent">
-              导出
-            </el-button>
-          </div>
-        </div>
-        <div class="results-content">
-          <div class="optimized-text">
-            {{ contentStore.optimizedContent }}
-          </div>
-        </div>
-      </section>
     </main>
+    
+    <!-- 词汇详情Tooltip -->
+    <WordTooltip
+      :issue="contentStore.selectedIssue"
+      :visible="contentStore.showTooltip"
+      :position="contentStore.tooltipPosition"
+      @close="contentStore.hideTooltip()"
+      @replace-word="handleReplaceWord"
+      @ignore-issue="handleIgnoreIssue"
+      @edit-manually="handleIssueClick"
+    />
+    
+    <!-- 批量替换面板 -->
+    <ReplacementPanel
+      :issues="contentStore.detectedIssues"
+      :visible="contentStore.showReplacementPanel"
+      :resolved-issues="contentStore.resolvedIssues"
+      @close="contentStore.showReplacementPanel = false"
+      @replace-word="handleReplaceWord"
+      @ignore-issue="handleIgnoreIssue"
+      @apply-all-homophones="handleApplyAllHomophones"
+      @navigate-to-issue="handleNavigateToIssue"
+    />
   </div>
 </template>
 
@@ -177,29 +191,23 @@ import {
   Target, 
   Lightbulb,
   Moon,
-  Sun,
-  Settings
+  Sun
 } from 'lucide-vue-next'
 
 import TopNavBar from '@/components/common/TopNavBar.vue'
 import DetectionCard from '@/components/user/DetectionCard.vue'
 import EmojiPicker from '@/components/user/EmojiPicker.vue'
 import EmojiSuggestionCard from '@/components/user/EmojiSuggestionCard.vue'
-import EmojiManagementPanel from '@/components/user/EmojiManagementPanel.vue'
+import HighlightEditor from '@/components/user/HighlightEditor.vue'
+import WordTooltip from '@/components/user/WordTooltip.vue'
+import ReplacementPanel from '@/components/user/ReplacementPanel.vue'
 import { useContentStore } from '@/stores/content'
 import { useThemeStore } from '@/stores/theme'
 
 const contentStore = useContentStore()
 const themeStore = useThemeStore()
 
-// 侧边栏标签页状态
-const activeSidebarTab = ref('detection')
-
-// 检查URL参数并设置默认标签页
-const urlParams = new URLSearchParams(window.location.search)
-if (urlParams.get('tab') === 'management') {
-  activeSidebarTab.value = 'management'
-}
+// 移除管理面板相关状态
 
 // 初始化用户会话
 contentStore.initUserSession()
@@ -222,6 +230,13 @@ const statusText = computed(() => {
   if (contentStore.detectedIssues.length > 0) return `发现 ${contentStore.detectedIssues.length} 个问题`
   if (contentStore.contentScore > 0) return `质量评分: ${contentStore.contentScore}`
   return '准备就绪'
+})
+
+// 计算未解决的问题数量
+const unresolvedIssuesCount = computed(() => {
+  return contentStore.detectedIssues.filter(issue => 
+    !contentStore.resolvedIssues.has(issue.id)
+  ).length
 })
 
 const analyzeContent = async () => {
@@ -311,6 +326,43 @@ const exportContent = () => {
   URL.revokeObjectURL(url)
   ElMessage.success('内容导出成功')
 }
+
+// 高亮交互事件处理
+const handleIssueClick = (issue: any) => {
+  // 计算点击位置，显示tooltip
+  const position = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+  contentStore.showIssueTooltip(issue, position)
+}
+
+const handleTextChange = (value: string) => {
+  // 文本变化时重置已解决的问题
+  if (value !== contentStore.currentContent) {
+    contentStore.resetResolvedIssues()
+  }
+}
+
+const handleReplaceWord = (issue: any, replacement: string) => {
+  contentStore.replaceWord(issue, replacement)
+  ElMessage.success(`已替换 "${issue.word}" 为 "${replacement}"`)
+}
+
+const handleIgnoreIssue = (issueId: string) => {
+  contentStore.ignoreIssue(issueId)
+  ElMessage.info('已忽略该问题')
+}
+
+const handleNavigateToIssue = (issue: any) => {
+  contentStore.selectIssue(issue)
+}
+
+const handleApplyAllHomophones = () => {
+  const count = contentStore.detectedIssues.filter(
+    issue => issue.type === 'homophone_word' && !contentStore.resolvedIssues.has(issue.id)
+  ).length
+  
+  contentStore.applyAllHomophones()
+  ElMessage.success(`已应用 ${count} 个谐音词替换`)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -325,11 +377,22 @@ const exportContent = () => {
 
 .content-wrapper {
   display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 24px;
+  grid-template-columns: 1fr 400px;
+  gap: 32px;
   padding: 24px;
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
+  min-height: calc(100vh - 64px);
+  
+  @media (max-width: 1400px) {
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+  }
+  
+  @media (max-width: 1200px) {
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+  }
   
   @media (max-width: 1023px) {
     grid-template-columns: 1fr;
@@ -360,25 +423,80 @@ const exportContent = () => {
       align-items: center;
       gap: 16px;
       
-      .char-count {
-        font-size: 14px;
-        color: var(--text-secondary);
+      .editor-actions {
+        display: flex;
+        gap: 8px;
+        
+        .replacement-panel-btn {
+          padding: 6px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          
+          &:hover {
+            border-color: var(--primary);
+            background: var(--primary-10);
+            color: var(--primary);
+          }
+          
+          &.active {
+            border-color: var(--primary);
+            background: var(--primary);
+            color: white;
+          }
+        }
       }
     }
   }
   
   .editor-container {
     .main-editor {
-      margin-bottom: 16px;
+      margin-bottom: 20px;
+      padding: 24px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      
+      &:hover {
+        border-color: var(--gray-400);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      
+      &:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px var(--primary-10);
+      }
       
       :deep(.el-textarea__inner) {
-        background: var(--bg-primary);
-        border-color: var(--border-color);
+        background: transparent;
+        border: none;
+        padding: 0;
         color: var(--text-primary);
+        font-size: 15px;
+        line-height: 1.6;
+        resize: vertical;
+        min-height: 200px;
         
         &:focus {
-          border-color: var(--primary);
-          box-shadow: 0 0 0 2px var(--primary-10);
+          outline: none;
+          box-shadow: none;
+        }
+        
+        &::placeholder {
+          color: var(--text-muted);
+          font-style: italic;
+        }
+      }
+      
+      :deep(.el-textarea) {
+        .el-textarea__inner {
+          box-shadow: none;
         }
       }
     }
@@ -387,21 +505,159 @@ const exportContent = () => {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      padding: 16px 20px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      margin-top: 8px;
       
       .toolbar-left,
       .toolbar-right {
         display: flex;
         gap: 12px;
+        align-items: center;
+      }
+      
+      .toolbar-left {
+        &::after {
+          content: '';
+          width: 1px;
+          height: 24px;
+          background: var(--border-color);
+          margin-left: 8px;
+        }
+      }
+      
+      // 自定义按钮样式，适配深色主题
+      :deep(.el-button) {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        border-radius: 8px;
+        font-weight: 500;
+        padding: 10px 16px;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      
+      :deep(.el-button:hover) {
+        background: var(--hover-bg);
+        border-color: var(--gray-400);
+        color: var(--text-primary);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+      }
+      
+      :deep(.el-button:active) {
+        transform: translateY(0);
+      }
+      
+      :deep(.el-button.is-disabled) {
+        background: var(--hover-bg);
+        border-color: var(--border-color);
+        color: var(--text-muted);
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      
+      :deep(.el-button.is-disabled:hover) {
+        transform: none;
+        box-shadow: none;
+        background: var(--hover-bg);
+        border-color: var(--border-color);
+        color: var(--text-muted);
+      }
+      
+      :deep(.el-button--primary) {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+      }
+      
+      :deep(.el-button--primary:hover) {
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        transform: translateY(-1px);
+      }
+      
+      :deep(.el-button--primary.is-disabled) {
+        background: var(--gray-400) !important;
+        color: var(--gray-100) !important;
+        opacity: 0.6;
+      }
+      
+      :deep(.el-button--primary.is-disabled:hover) {
+        background: var(--gray-400) !important;
+        color: var(--gray-100) !important;
+        transform: none;
+        box-shadow: none;
+      }
+      
+      :deep(.el-button--success) {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        border: none;
+        color: white;
+      }
+      
+      :deep(.el-button--success:hover) {
+        background: linear-gradient(135deg, #0d9f73 0%, #047857 100%);
+        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        transform: translateY(-1px);
+      }
+      
+      :deep(.el-button--success.is-disabled) {
+        background: var(--gray-400) !important;
+        color: var(--gray-100) !important;
+        opacity: 0.6;
+      }
+      
+      :deep(.el-button--success.is-disabled:hover) {
+        background: var(--gray-400) !important;
+        color: var(--gray-100) !important;
+        transform: none;
+        box-shadow: none;
+      }
+      
+      :deep(.el-button--default) {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+      }
+      
+      :deep(.el-button--default:hover) {
+        background: var(--hover-bg);
+        border-color: var(--primary);
+        color: var(--primary);
+        transform: translateY(-1px);
+      }
+      
+      :deep(.el-button .el-icon) {
+        margin-right: 6px;
       }
       
       @media (max-width: 767px) {
         flex-direction: column;
-        gap: 12px;
+        gap: 16px;
+        padding: 16px;
         
         .toolbar-left,
         .toolbar-right {
           width: 100%;
           justify-content: center;
+          gap: 8px;
+        }
+        
+        .toolbar-left {
+          &::after {
+            display: none;
+          }
+        }
+        
+        :deep(.el-button) {
+          flex: 1;
+          min-width: 0;
+          padding: 12px 8px;
+          font-size: 14px;
         }
       }
     }
@@ -450,49 +706,98 @@ const exportContent = () => {
   .management-panel {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
     height: calc(100vh - 200px);
     overflow-y: auto;
+    padding-right: 8px;
+    
+    // 自定义滚动条样式
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: var(--gray-400);
+      border-radius: 3px;
+      opacity: 0.6;
+      
+      &:hover {
+        background: var(--gray-500);
+        opacity: 0.8;
+      }
+    }
   }
 }
 
-.results-section {
-  margin-top: 32px;
-  padding: 0 24px 24px;
-  max-width: 1400px;
-  margin-left: auto;
-  margin-right: auto;
-  
-  .results-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
+  // 编辑器区域内的优化结果
+  .results-section {
+    margin-top: 20px;
     
-    h3 {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-    
-    .results-actions {
+    .results-header {
       display: flex;
-      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0;
+      padding: 16px 20px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px 12px 0 0;
+      
+      h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        
+        &::before {
+          content: '✨';
+          font-size: 16px;
+        }
+      }
+      
+      .results-actions {
+        display: flex;
+        gap: 8px;
+        
+        :deep(.el-button) {
+          padding: 8px 12px;
+          font-size: 13px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          color: var(--text-secondary);
+          
+          &:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            transform: translateY(-1px);
+          }
+        }
+      }
     }
-  }
-  
-  .results-content {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 20px;
     
-    .optimized-text {
-      font-size: 16px;
-      line-height: 1.6;
-      color: var(--text-primary);
-      white-space: pre-wrap;
+    .results-content {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      
+      .optimized-text {
+        font-size: 15px;
+        line-height: 1.7;
+        color: var(--text-primary);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
     }
   }
-}
+
 </style>
